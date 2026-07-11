@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Spatially indexes OSM vectors and turns them into solid, queryable voxel chunks. */
@@ -29,11 +30,12 @@ public final class OsmWorldGenerator {
     private static final double CORNER_RADIUS = 0.8;
     private static final double DEFAULT_LATITUDE = 9.9312;
     private static final double DEFAULT_LONGITUDE = 76.2673;
+    private static final long SECTOR_RETRY_COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(5);
 
     private final OsmCoordinate projection;
     private final OsmHttpClient httpClient;
     private final OsmParser parser;
-    private final ConcurrentMap<Sector, CompletableFuture<Void>> sectorLoads = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Sector, SectorLoad> sectorLoads = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, List<OsmElement.OsmBuilding>> chunkBuildings = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, List<OsmElement.OsmRoad>> chunkRoads = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, List<OsmElement.OsmWater>> chunkWater = new ConcurrentHashMap<>();
@@ -89,16 +91,21 @@ public final class OsmWorldGenerator {
         Sector sector = new Sector(
                 Math.floorDiv(worldX, OsmHttpClient.SECTOR_SIZE_METERS),
                 Math.floorDiv(worldZ, OsmHttpClient.SECTOR_SIZE_METERS));
-        CompletableFuture<Void> result = sectorLoads.computeIfAbsent(sector, this::loadSector);
-        result.whenComplete((ignored, failure) -> {
-            if (failure != null) sectorLoads.remove(sector, result);
+        long now = System.nanoTime();
+        SectorLoad existing = sectorLoads.get(sector);
+        if (existing != null && !existing.canRetry(now)) return existing.future();
+        SectorLoad load = sectorLoads.compute(sector, (ignored, current) -> {
+            if (current == null || current.canRetry(now)) {
+                return new SectorLoad(loadSector(sector));
+            }
+            return current;
         });
-        return result;
+        return load.future();
     }
 
     private CompletableFuture<Void> loadSector(Sector sector) {
         return httpClient.fetchSector(sector.x(), sector.z(), projection)
-                .thenApply(parser::parse)
+                .thenApply(json -> parseSector(sector, json))
                 .thenAccept(elements -> {
                     indexElements(elements);
                     lastLoadError = null;
@@ -111,6 +118,19 @@ public final class OsmWorldGenerator {
                                 + " could not be loaded: " + lastLoadError);
                     }
                 });
+    }
+
+    private List<OsmElement> parseSector(Sector sector, String json) {
+        try {
+            return parser.parse(json);
+        } catch (RuntimeException exception) {
+            try {
+                httpClient.invalidateSector(sector.x(), sector.z(), projection);
+            } catch (RuntimeException cleanupFailure) {
+                exception.addSuppressed(cleanupFailure);
+            }
+            throw exception;
+        }
     }
 
     /** Material at an unedited world cell, or {@code null} for air. */
@@ -196,7 +216,7 @@ public final class OsmWorldGenerator {
             for (int localZ = 0; localZ < Chunk.SIZE; localZ++) {
                 int x = baseX + localX;
                 int z = baseZ + localZ;
-                if (isOnRoad(x, z) && hasStandingClearance(x, z)) {
+                if (isOnRoad(x, z) && !isInsideWater(x, z) && hasStandingClearance(x, z)) {
                     candidates.add(new BlockPos(x, GROUND_HEIGHT, z));
                 }
             }
@@ -517,6 +537,28 @@ public final class OsmWorldGenerator {
     }
 
     private record Sector(int x, int z) {
+    }
+
+    private static final class SectorLoad {
+        private final CompletableFuture<Void> future;
+        private volatile long failedAtNanos = Long.MAX_VALUE;
+
+        private SectorLoad(CompletableFuture<Void> future) {
+            this.future = future;
+            future.whenComplete((result, failure) -> {
+                if (failure != null) failedAtNanos = System.nanoTime();
+            });
+        }
+
+        private CompletableFuture<Void> future() {
+            return future;
+        }
+
+        private boolean canRetry(long now) {
+            long failure = failedAtNanos;
+            return future.isCompletedExceptionally() && failure != Long.MAX_VALUE
+                    && now - failure >= SECTOR_RETRY_COOLDOWN_NANOS;
+        }
     }
 
     private record Bounds(int minimumX, int maximumX, int minimumZ, int maximumZ) {
