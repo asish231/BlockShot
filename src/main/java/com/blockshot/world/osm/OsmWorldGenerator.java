@@ -5,9 +5,11 @@ import com.blockshot.entity.NpcRole;
 import com.blockshot.entity.Villager;
 import com.blockshot.world.BlockMaterial;
 import com.blockshot.world.BlockPos;
+import com.blockshot.world.Box;
 import com.blockshot.world.Chunk;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
@@ -25,6 +27,8 @@ public final class OsmWorldGenerator {
     private static final int FLOOR_HEIGHT = 3;
     private static final double WALL_HALF_WIDTH = 0.55;
     private static final double CORNER_RADIUS = 0.8;
+    private static final double DEFAULT_LATITUDE = 9.9312;
+    private static final double DEFAULT_LONGITUDE = 76.2673;
 
     private final OsmCoordinate projection;
     private final OsmHttpClient httpClient;
@@ -38,7 +42,7 @@ public final class OsmWorldGenerator {
 
     private volatile String lastLoadError;
 
-    /** Creates the default Reykjavik-centred loader, configurable through world.osm properties. */
+    /** Creates the default Kochi-centred loader, configurable through world.osm properties. */
     public OsmWorldGenerator() {
         this(defaultProjection(), new OsmHttpClient());
     }
@@ -85,7 +89,11 @@ public final class OsmWorldGenerator {
         Sector sector = new Sector(
                 Math.floorDiv(worldX, OsmHttpClient.SECTOR_SIZE_METERS),
                 Math.floorDiv(worldZ, OsmHttpClient.SECTOR_SIZE_METERS));
-        return sectorLoads.computeIfAbsent(sector, this::loadSector);
+        CompletableFuture<Void> result = sectorLoads.computeIfAbsent(sector, this::loadSector);
+        result.whenComplete((ignored, failure) -> {
+            if (failure != null) sectorLoads.remove(sector, result);
+        });
+        return result;
     }
 
     private CompletableFuture<Void> loadSector(Sector sector) {
@@ -131,39 +139,9 @@ public final class OsmWorldGenerator {
             }
         }
 
-        // Spawn citizens/NPCs along roads dynamically in OSM mode
         long chunkKey = Chunk.key(chunkX, chunkZ);
-        List<OsmElement.OsmRoad> roads = chunkRoads.getOrDefault(chunkKey, List.of());
-        if (!roads.isEmpty()) {
-            Random rng = new Random(chunkKey ^ 0x5DEECE66DL);
-            // Spawn a few villagers
-            for (int i = 0; i < Math.min(5, roads.size() * 2); i++) {
-                OsmElement.OsmRoad road = roads.get(rng.nextInt(roads.size()));
-                if (!road.points().isEmpty()) {
-                    BlockPos pt = road.points().get(rng.nextInt(road.points().size()));
-                    double rx = pt.x() + 0.5 + (rng.nextDouble() - 0.5) * 2;
-                    double rz = pt.z() + 0.5 + (rng.nextDouble() - 0.5) * 2;
-                    chunk.villagers.add(new Villager(rx, rz,
-                            0.35f + rng.nextFloat() * 0.6f,
-                            0.35f + rng.nextFloat() * 0.6f,
-                            0.35f + rng.nextFloat() * 0.6f,
-                            rng.nextLong()));
-                }
-            }
-            // Spawn some patrolling civilian and police NPCs
-            for (int i = 0; i < Math.min(3, roads.size()); i++) {
-                OsmElement.OsmRoad road = roads.get(rng.nextInt(roads.size()));
-                if (!road.points().isEmpty()) {
-                    BlockPos pt = road.points().get(rng.nextInt(road.points().size()));
-                    double rx = pt.x() + 0.5;
-                    double rz = pt.z() + 0.5;
-                    NpcRole role = (i == 0) ? NpcRole.POLICE : NpcRole.CIVILIAN;
-                    Npc npc = new Npc(UUID.randomUUID(), role, rx, rz, rng.nextLong());
-                    npc.y = GROUND_HEIGHT;
-                    chunk.npcs.add(npc);
-                }
-            }
-        }
+        addGreenery(chunk, baseX, baseZ, chunkKey);
+        addPopulation(chunk, baseX, baseZ, chunkKey);
 
         return chunk;
     }
@@ -199,8 +177,7 @@ public final class OsmWorldGenerator {
             if (position.y() == GROUND_HEIGHT - 1) {
                 if (isInsideWater(position.x(), position.z())) return BlockMaterial.WATER;
                 if (isOnRoad(position.x(), position.z())) return BlockMaterial.ASPHALT;
-                if (isInsidePark(position.x(), position.z())) return BlockMaterial.GRASS;
-                return BlockMaterial.DIRT;
+                return BlockMaterial.GRASS;
             }
             return position.y() == 0 ? BlockMaterial.STONE : BlockMaterial.DIRT;
         }
@@ -210,6 +187,108 @@ public final class OsmWorldGenerator {
             if (material != null) return material;
         }
         return null;
+    }
+
+    private void addPopulation(Chunk chunk, int baseX, int baseZ, long chunkKey) {
+        if (chunkRoads.getOrDefault(chunkKey, List.of()).isEmpty()) return;
+        List<BlockPos> candidates = new ArrayList<>();
+        for (int localX = 0; localX < Chunk.SIZE; localX++) {
+            for (int localZ = 0; localZ < Chunk.SIZE; localZ++) {
+                int x = baseX + localX;
+                int z = baseZ + localZ;
+                if (isOnRoad(x, z) && hasStandingClearance(x, z)) {
+                    candidates.add(new BlockPos(x, GROUND_HEIGHT, z));
+                }
+            }
+        }
+        if (candidates.isEmpty()) return;
+
+        Random random = new Random(chunkSeed(chunkKey, 0x5DEECE66DL));
+        Collections.shuffle(candidates, random);
+        int people = Math.min(candidates.size(), Math.min(8,
+                Math.max(3, candidates.size() / 12)));
+        int villagers = Math.max(1, people * 2 / 3);
+        for (int index = 0; index < people; index++) {
+            BlockPos cell = candidates.get(index);
+            double x = cell.x() + 0.5;
+            double z = cell.z() + 0.5;
+            if (index < villagers) {
+                Villager villager = new Villager(x, z,
+                        0.35f + random.nextFloat() * 0.6f,
+                        0.35f + random.nextFloat() * 0.6f,
+                        0.35f + random.nextFloat() * 0.6f,
+                        random.nextLong());
+                villager.y = GROUND_HEIGHT;
+                chunk.villagers.add(villager);
+            } else {
+                NpcRole role = index == villagers ? NpcRole.POLICE : NpcRole.CIVILIAN;
+                Npc npc = new Npc(new UUID(random.nextLong(), random.nextLong()), role,
+                        x, z, random.nextLong());
+                npc.y = GROUND_HEIGHT;
+                chunk.npcs.add(npc);
+            }
+        }
+    }
+
+    private void addGreenery(Chunk chunk, int baseX, int baseZ, long chunkKey) {
+        List<BlockPos> parkCells = new ArrayList<>();
+        List<BlockPos> openCells = new ArrayList<>();
+        for (int localX = 2; localX < Chunk.SIZE - 2; localX++) {
+            for (int localZ = 2; localZ < Chunk.SIZE - 2; localZ++) {
+                int x = baseX + localX;
+                int z = baseZ + localZ;
+                if (isOnRoad(x, z) || isInsideWater(x, z) || !hasStandingClearance(x, z)) continue;
+                BlockPos cell = new BlockPos(x, GROUND_HEIGHT, z);
+                openCells.add(cell);
+                if (isInsidePark(x, z)) parkCells.add(cell);
+            }
+        }
+
+        boolean park = !parkCells.isEmpty();
+        List<BlockPos> candidates = park ? parkCells : openCells;
+        if (candidates.isEmpty()) return;
+        Random random = new Random(chunkSeed(chunkKey, 0x6A09E667F3BCC909L));
+        Collections.shuffle(candidates, random);
+        int target = park ? Math.min(4, Math.max(1, candidates.size() / 40))
+                : Math.floorMod(chunkSeed(chunkKey, 0xBB67AE8584CAA73BL), 3) == 0 ? 1 : 0;
+        List<BlockPos> selected = new ArrayList<>();
+        for (BlockPos cell : candidates) {
+            if (selected.size() >= target) break;
+            boolean spaced = selected.stream().allMatch(other ->
+                    Math.hypot(cell.x() - other.x(), cell.z() - other.z()) >= 3.5);
+            if (!spaced) continue;
+            selected.add(cell);
+            addTree(chunk, cell.x() + 0.5, cell.z() + 0.5, random);
+        }
+    }
+
+    private boolean hasStandingClearance(int x, int z) {
+        return indexedBlockAt(new BlockPos(x, GROUND_HEIGHT, z)) == null
+                && indexedBlockAt(new BlockPos(x, GROUND_HEIGHT + 1, z)) == null;
+    }
+
+    private static void addTree(Chunk chunk, double x, double z, Random random) {
+        int trunkHeight = 3 + random.nextInt(2);
+        for (int offset = 0; offset < trunkHeight; offset++) {
+            chunk.opaqueBlocks.add(new Box(x - 0.15, GROUND_HEIGHT + offset, z - 0.15,
+                    0.3, 1.0, 0.3, 0.42f, 0.28f, 0.15f));
+        }
+        double leavesY = GROUND_HEIGHT + trunkHeight - 1;
+        chunk.opaqueBlocks.add(new Box(x - 1.1, leavesY, z - 1.1,
+                2.2, 1.4, 2.2, 0.16f, 0.44f, 0.18f));
+        chunk.opaqueBlocks.add(new Box(x - 0.7, leavesY + 1.2, z - 0.7,
+                1.4, 1.0, 1.4, 0.20f, 0.50f, 0.22f));
+    }
+
+    private long chunkSeed(long chunkKey, long salt) {
+        long latitude = Double.doubleToLongBits(projection.referenceLatitude());
+        long longitude = Double.doubleToLongBits(projection.referenceLongitude());
+        long mixed = chunkKey ^ salt ^ Long.rotateLeft(latitude, 17) ^ Long.rotateLeft(longitude, 41);
+        mixed ^= mixed >>> 30;
+        mixed *= 0xBF58476D1CE4E5B9L;
+        mixed ^= mixed >>> 27;
+        mixed *= 0x94D049BB133111EBL;
+        return mixed ^ mixed >>> 31;
     }
 
     private BlockMaterial buildingMaterialAt(OsmElement.OsmBuilding building, BlockPos position) {
@@ -422,8 +501,8 @@ public final class OsmWorldGenerator {
     }
 
     private static OsmCoordinate defaultProjection() {
-        double latitude = propertyDouble("world.osm.latitude", 64.1466);
-        double longitude = propertyDouble("world.osm.longitude", -21.9426);
+        double latitude = propertyDouble("world.osm.latitude", DEFAULT_LATITUDE);
+        double longitude = propertyDouble("world.osm.longitude", DEFAULT_LONGITUDE);
         return new OsmCoordinate(latitude, longitude);
     }
 
