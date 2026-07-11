@@ -3,9 +3,10 @@ package com.blockshot.game;
 import java.util.Objects;
 
 /** Validated command-line options for offline or LAN play. */
-public record GameLaunchOptions(Mode mode, String remoteHost, int port, String playerName) {
+public record GameLaunchOptions(Mode mode, String remoteHost, int port, String playerName, long worldSeed) {
 
     public static final int DEFAULT_PORT = 29_555;
+    public static final long DEFAULT_SEED = 1337L;
 
     public enum Mode { OFFLINE, HOST, JOIN }
 
@@ -35,8 +36,10 @@ public record GameLaunchOptions(Mode mode, String remoteHost, int port, String p
         String host = null;
         int port = 0;
         String name = "Player";
+        long seed = DEFAULT_SEED;
         boolean modeSpecified = false;
         boolean nameSpecified = false;
+        boolean seedSpecified = false;
 
         for (String argument : arguments) {
             if (argument == null) throw new IllegalArgumentException("Arguments must not be null");
@@ -57,11 +60,15 @@ public record GameLaunchOptions(Mode mode, String remoteHost, int port, String p
                 if (nameSpecified) throw new IllegalArgumentException("Player name was specified twice");
                 nameSpecified = true;
                 name = argument.substring("--name=".length()).trim();
+            } else if (argument.startsWith("--seed=")) {
+                if (seedSpecified) throw new IllegalArgumentException("World seed was specified twice");
+                seedSpecified = true;
+                seed = parseSeed(argument.substring("--seed=".length()).trim());
             } else {
                 throw new IllegalArgumentException("Unknown launch argument: " + argument);
             }
         }
-        return new GameLaunchOptions(mode, host, port, name);
+        return new GameLaunchOptions(mode, host, port, name, seed);
     }
 
     public boolean multiplayer() {
@@ -96,6 +103,15 @@ public record GameLaunchOptions(Mode mode, String remoteHost, int port, String p
         }
         if (host.isBlank()) throw new IllegalArgumentException("Join host must not be blank");
         return new Endpoint(host, parsePort(portText, false));
+    }
+
+    private static long parseSeed(String text) {
+        if (text.isEmpty()) throw new IllegalArgumentException("World seed must not be blank");
+        try {
+            return Long.parseLong(text);
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("World seed is not a number: " + text, exception);
+        }
     }
 
     private static int parsePort(String text, boolean allowZero) {

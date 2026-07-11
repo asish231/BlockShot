@@ -71,6 +71,10 @@ public final class ChunkMeshBuilder {
 
     private static void appendFace(FloatArrayBuilder destination, BlockPos position,
                                    Direction direction, BlockMaterial material) {
+        // Hash code based on block coordinates for deterministic noise/speckle pattern
+        int h = (position.x() * 8976890 + position.y() * 9811233 + position.z() * 1928311) & 0xFF;
+        float noise = ((h - 128) / 128.0f) * 0.08f; // variation from -0.08 to +0.08
+
         for (int[] vertex : direction.vertices()) {
             destination.add((float) position.x() + vertex[0]);
             destination.add((float) position.y() + vertex[1]);
@@ -78,9 +82,57 @@ public final class ChunkMeshBuilder {
             destination.add(direction.nx());
             destination.add(direction.ny());
             destination.add(direction.nz());
-            destination.add(material.r());
-            destination.add(material.g());
-            destination.add(material.b());
+
+            float vr = material.r();
+            float vg = material.g();
+            float vb = material.b();
+
+            if (material == BlockMaterial.GRASS) {
+                if (direction.ny() == 1) {
+                    // Top face: grass green with green noise
+                    vr += noise * 0.5f;
+                    vg += noise;
+                    vb += noise * 0.5f;
+                } else if (direction.ny() == -1) {
+                    // Bottom face: dirt brown with dirt noise
+                    vr = BlockMaterial.DIRT.r() + noise;
+                    vg = BlockMaterial.DIRT.g() + noise;
+                    vb = BlockMaterial.DIRT.b() + noise;
+                } else {
+                    // Side faces: Top vertices green, bottom vertices brown!
+                    int localY = vertex[1];
+                    if (localY == 1) {
+                        // Green trim
+                        vr += noise * 0.5f;
+                        vg += noise;
+                        vb += noise * 0.5f;
+                    } else {
+                        // Dirt
+                        vr = BlockMaterial.DIRT.r() + noise;
+                        vg = BlockMaterial.DIRT.g() + noise;
+                        vb = BlockMaterial.DIRT.b() + noise;
+                    }
+                }
+            } else if (material == BlockMaterial.DIRT) {
+                // Dirt: brown with noise speckles
+                vr += noise;
+                vg += noise;
+                vb += noise;
+            } else if (material == BlockMaterial.STONE) {
+                // Stone: grey with noise speckles
+                vr += noise;
+                vg += noise;
+                vb += noise;
+            } else if (material == BlockMaterial.SAND) {
+                // Sand: yellow/tan with noise speckles
+                vr += noise;
+                vg += noise;
+                vb += noise;
+            }
+
+            destination.add(vr);
+            destination.add(vg);
+            destination.add(vb);
             destination.add(material.a());
         }
     }

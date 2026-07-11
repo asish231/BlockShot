@@ -123,20 +123,49 @@ public final class EntityRenderer {
 
     private void drawPerson(double x, double y, double z, float r, float g, float b,
                             boolean police, boolean pursuing) {
+        // Legs
         drawBox(new Box(x - 0.22, y, z - 0.17, 0.20, 0.78, 0.32,
                 0.15f, 0.18f, 0.25f));
         drawBox(new Box(x + 0.02, y, z - 0.17, 0.20, 0.78, 0.32,
                 0.15f, 0.18f, 0.25f));
+        // Torso
         drawBox(new Box(x - 0.30, y + 0.78, z - 0.22, 0.60, 0.72, 0.44, r, g, b));
+        // Head
         drawBox(new Box(x - 0.24, y + 1.50, z - 0.19, 0.48, 0.48, 0.38,
                 0.91f, 0.68f, 0.47f));
+
+        // Eyes (white background)
+        drawBox(new Box(x - 0.16, y + 1.76, z - 0.21, 0.08, 0.08, 0.03,
+                0.95f, 0.95f, 0.95f));
+        drawBox(new Box(x + 0.08, y + 1.76, z - 0.21, 0.08, 0.08, 0.03,
+                0.95f, 0.95f, 0.95f));
+
+        // Pupils (blue/black)
+        drawBox(new Box(x - 0.14, y + 1.78, z - 0.22, 0.04, 0.04, 0.04,
+                0.12f, 0.45f, 0.85f));
+        drawBox(new Box(x + 0.10, y + 1.78, z - 0.22, 0.04, 0.04, 0.04,
+                0.12f, 0.45f, 0.85f));
+
+        // Nose
+        drawBox(new Box(x - 0.03, y + 1.66, z - 0.22, 0.06, 0.08, 0.04,
+                0.88f, 0.58f, 0.40f));
+
+        // Mouth (red smile)
+        drawBox(new Box(x - 0.08, y + 1.58, z - 0.21, 0.16, 0.04, 0.03,
+                0.85f, 0.22f, 0.18f));
+
         if (police) {
+            // Police hat
             drawBox(new Box(x - 0.27, y + 1.92, z - 0.22, 0.54, 0.12, 0.44,
                     0.04f, 0.08f, 0.18f));
             if (pursuing) {
                 drawBox(new Box(x - 0.17, y + 1.55, z - 0.25, 0.34, 0.12, 0.08,
                         0.86f, 0.74f, 0.12f));
             }
+        } else {
+            // Hair cap
+            drawBox(new Box(x - 0.26, y + 1.90, z - 0.21, 0.52, 0.10, 0.42,
+                    0.30f, 0.18f, 0.12f));
         }
     }
 

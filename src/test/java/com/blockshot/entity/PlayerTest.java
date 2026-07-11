@@ -41,9 +41,9 @@ class PlayerTest {
     @Test
     void givenForwardInput_whenUpdated_thenMovesForward() {
         Player p = new Player(0, 0, 0);
-        p.yaw = 0; // facing +z
+        p.yaw = 0; // facing -z
         p.update(0.1, 1, 0, false, false, FLAT);
-        assertTrue(p.z > 0, "forward with yaw 0 should increase z");
+        assertTrue(p.z < 0, "forward with yaw 0 should decrease z");
         assertEquals(0, p.x, 1e-6);
     }
 

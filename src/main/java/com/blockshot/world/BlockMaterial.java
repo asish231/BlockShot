@@ -31,7 +31,9 @@ public enum BlockMaterial {
     WATER(11, 0.18f, 0.38f, 0.62f, 0.55f, false, false, false,
             0.0, 1.0, 0.0, GravityBehavior.FLUID),
     ASPHALT(12, 0.20f, 0.21f, 0.23f, 1.00f, true, true, true,
-            4.5, 2.2, 11.0, GravityBehavior.NONE);
+            4.5, 2.2, 11.0, GravityBehavior.NONE),
+    LADDER(13, 0.65f, 0.45f, 0.20f, 0.80f, false, false, true,
+            0.5, 0.5, 1.0, GravityBehavior.NONE);
 
     public enum GravityBehavior {
         NONE,

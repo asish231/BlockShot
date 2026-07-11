@@ -36,6 +36,7 @@ import com.blockshot.world.Chunk;
 import com.blockshot.world.ChunkManager;
 import com.blockshot.world.TerrainGenerator;
 import com.blockshot.world.VoxelRaycaster;
+import com.blockshot.world.WorldLayout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -82,11 +83,11 @@ public final class GpuBlockShot {
     private long window;
 
     private final GameLaunchOptions options;
-    private final long seed = 1337L;
-    private final TerrainGenerator terrain = new TerrainGenerator(seed);
-    private final ChunkManager chunks = new ChunkManager(terrain, RENDER_DISTANCE);
+    private final long seed;
+    private final TerrainGenerator terrain;
+    private final ChunkManager chunks;
     private final BlockInventory inventory = new BlockInventory();
-    private final WorldInteractionSystem interactions = new WorldInteractionSystem(chunks, inventory);
+    private final WorldInteractionSystem interactions;
     private final CrimeSystem crime = new CrimeSystem();
     private final MouseLookController look = new MouseLookController(MOUSE_SENSITIVITY);
     private final EntityRenderer entities = new EntityRenderer();
@@ -123,6 +124,8 @@ public final class GpuBlockShot {
     private final String[] blockNames = new String[BUILDABLE.length];
 
     private Player player;
+    private double spawnX;
+    private double spawnZ;
     private ChunkRenderer chunkRenderer;
     private HudRenderer hud;
 
@@ -131,6 +134,10 @@ public final class GpuBlockShot {
 
     private GpuBlockShot(GameLaunchOptions options) {
         this.options = options;
+        this.seed = options.worldSeed();
+        this.terrain = new TerrainGenerator(seed);
+        this.chunks = new ChunkManager(terrain, RENDER_DISTANCE);
+        this.interactions = new WorldInteractionSystem(chunks, inventory);
     }
 
     public static void main(String[] args) {
@@ -140,7 +147,7 @@ public final class GpuBlockShot {
             options = GameLaunchOptions.parse(args);
         } catch (IllegalArgumentException ex) {
             System.err.println("Invalid launch options: " + ex.getMessage());
-            System.err.println("Usage: [--host[=port]] [--join=host:port] [--name=Player]");
+            System.err.println("Usage: [--host[=port]] [--join=host:port] [--name=Player] [--seed=number]");
             return;
         }
         new GpuBlockShot(options).run();
@@ -327,19 +334,25 @@ public final class GpuBlockShot {
     }
 
     void spawnWorld() {
-        double sx = 0.5;
-        double sz = 0.5;
-        chunks.updateIncremental(sx, sz, SPAWN_LOAD);
-        player = new Player(sx, chunks.surfaceY(sx, sz), sz);
+        // Spawn on the plaza row just south of the home city's landmark chunk;
+        // that row is kept clear of structures by every district type.
+        WorldLayout.City home = chunks.layout().nearestCity(0, 0);
+        spawnX = home.chunkX() * Chunk.SIZE + 7.5;
+        spawnZ = (home.chunkZ() + 1) * Chunk.SIZE + 0.5;
+        chunks.updateIncremental(spawnX, spawnZ, SPAWN_LOAD);
+        player = new Player(spawnX, chunks.surfaceY(spawnX, spawnZ), spawnZ);
         player.pitch = 5;
         spawnVehicles();
     }
 
     void spawnVehicles() {
-        addVehicle(VehicleType.CAR, 6.5, 2.5);
-        addVehicle(VehicleType.CAR, -5.5, 5.5);
-        addVehicle(VehicleType.HELICOPTER, 12.5, 12.5);
-        addVehicle(VehicleType.PLANE, 26.5, 22.5);
+        WorldLayout.City home = chunks.layout().nearestCity(0, 0);
+        double rowZ = (home.chunkZ() + 1) * Chunk.SIZE + 0.5;
+        double baseX = home.chunkX() * Chunk.SIZE;
+        addVehicle(VehicleType.CAR, baseX + 4.5, rowZ);
+        addVehicle(VehicleType.CAR, baseX + 11.5, rowZ);
+        addVehicle(VehicleType.HELICOPTER, baseX + 13.5, rowZ);
+        addVehicle(VehicleType.PLANE, baseX + 1.5, rowZ);
     }
 
     void addVehicle(VehicleType type, double x, double z) {
@@ -468,7 +481,27 @@ public final class GpuBlockShot {
         double maxDist = block.map(VoxelRaycaster.Hit::distance).orElse(WEAPON_RANGE);
 
         Npc target = null;
+        com.blockshot.net.NetworkMessage.PlayerState targetPlayer = null;
         double best = maxDist;
+
+        // Check remote players first
+        if (client != null) {
+            for (com.blockshot.net.NetworkMessage.PlayerState rp : client.remotePlayers().values()) {
+                double ox = rp.x() - eyeX;
+                double oy = (rp.y() + 1.0) - eyeY;
+                double oz = rp.z() - eyeZ;
+                double t = ox * d[0] + oy * d[1] + oz * d[2];
+                if (t < 0 || t > best) continue;
+                double perp2 = (ox * ox + oy * oy + oz * oz) - t * t;
+                if (perp2 <= 0.55 * 0.55) {
+                    best = t;
+                    targetPlayer = rp;
+                    target = null;
+                }
+            }
+        }
+
+        // Check NPCs
         for (Chunk c : chunks.loadedChunks()) {
             for (Npc npc : c.npcs) {
                 if (!npc.alive()) continue;
@@ -481,10 +514,14 @@ public final class GpuBlockShot {
                 if (perp2 <= 0.55 * 0.55) {
                     best = t;
                     target = npc;
+                    targetPlayer = null;
                 }
             }
         }
-        if (target != null) {
+
+        if (targetPlayer != null) {
+            setMessage("HIT PLAYER: " + targetPlayer.name());
+        } else if (target != null) {
             boolean killed = target.damage(weaponDamage(w.type()));
             crime.report(target.role() == NpcRole.POLICE
                     ? CrimeType.ATTACK_POLICE : CrimeType.ASSAULT);
@@ -617,9 +654,9 @@ public final class GpuBlockShot {
             ridden.disembark(playerId);
             ridden = null;
         }
-        player.x = 0.5;
-        player.z = 0.5;
-        player.y = chunks.surfaceY(0.5, 0.5);
+        player.x = spawnX;
+        player.z = spawnZ;
+        player.y = chunks.surfaceY(spawnX, spawnZ);
         player.vy = 0;
         health = 100;
         setMessage("RESPAWNED");
@@ -685,7 +722,7 @@ public final class GpuBlockShot {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glRotated(player.pitch, 1, 0, 0);
-        glRotated(player.yaw + 180, 0, 1, 0);
+        glRotated(player.yaw, 0, 1, 0);
         glTranslated(-player.x, -player.eyeY(), -player.z);
 
         float[] sunPos = {-0.4f, 1.3f, 0.3f, 0};

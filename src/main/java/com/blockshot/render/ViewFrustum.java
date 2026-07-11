@@ -34,9 +34,9 @@ public final class ViewFrustum {
         this.cameraZ = cameraZ;
         double yawRadians = Math.toRadians(yaw);
         forwardX = Math.sin(yawRadians);
-        forwardZ = Math.cos(yawRadians);
+        forwardZ = -Math.cos(yawRadians);
         rightX = Math.cos(yawRadians);
-        rightZ = -Math.sin(yawRadians);
+        rightZ = Math.sin(yawRadians);
         sideSlope = Math.tan(Math.toRadians(verticalFovDegrees) * 0.5) * aspect;
         this.farDistance = farDistance;
     }

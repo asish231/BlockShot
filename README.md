@@ -10,6 +10,9 @@ buildings and optional LAN multiplayer.
 ```bash
 cd /Users/asishsharma/programming/Llm
 mvn -o compile exec:exec
+
+# Explore a different world — any number is a valid seed (default 1337)
+mvn -o compile exec:exec -Dexec.args="--seed=20260711"
 ```
 
 The launcher passes the macOS-required `-XstartOnFirstThread` JVM argument automatically.
@@ -39,6 +42,8 @@ mvn -o compile exec:exec -Dexec.args="--join=192.168.1.20:29555 --name=Sam"
 
 Other players appear as moving figures and their block edits are replicated to you in real time.
 If the network is unavailable the game falls back to offline play instead of crashing.
+When playing together, pass the **same `--seed`** on every machine so everyone roams the same world
+(leaving it out works too — everyone then gets the shared default seed).
 
 ## Controls
 
@@ -66,12 +71,19 @@ If the network is unavailable the game falls back to offline play instead of cra
   roaming stays fast even with a large view distance.
 - **Infinite streaming world** — chunks generate as you approach and **unload** once distant, with a
   per-frame generation budget so streaming never hitches. Memory and frame time stay bounded.
-- **Deterministic generation** — the same seed always rebuilds the same world, biomes and cities.
+- **Seeded, asymmetric world generation** — launch with `--seed=<number>` and the planner
+  (`WorldLayout`) scatters cities of **different sizes** irregularly across coarse regions, links
+  neighbouring cities with **winding countryside highways** that grade smoothly between city
+  elevations and causeway across water, and sprinkles the countryside with **farmstead hamlets**
+  (cottage, fenced yard, crops). The same seed always rebuilds the exact same world; a different
+  seed gives a genuinely different map.
 - **Biomes & nature** — plains, forests, rocky hills and oceans; trees, flowers, translucent
   **water** with **swimming fish**.
-- **Cities & people** — procedurally placed on a lattice, with a road grid, destructible buildings
-  (real doors, `GLASS` windows, floors and roofs in varied brick/concrete/steel), **residents who
-  walk around**, and GTA-style **crowds of civilians and police**.
+- **Cities & people** — every city is districted (residential, mall/hospital, courtyard,
+  garden farm, beach) with a guaranteed **landmark** (twin towers or palace) at its centre,
+  destructible buildings (real doors, `GLASS` windows, ladders, floors and roofs in varied
+  brick/concrete/steel), **residents who walk around**, and GTA-style **crowds of civilians and
+  police**.
 - **Vehicles** — drive **cars**, fly **helicopters** and **planes**, each with seating capacity and
   arcade physics (ground following, lift, climb).
 - **Guns & wanted level** — hit-scan weapons with finite ammo and reloads. Attacking people is a
@@ -92,7 +104,7 @@ modules together.
 
 | Package | Responsibility |
 |---|---|
-| `world` | `Box`, `Chunk`, `BlockMaterial`, `BlockPos`, `TerrainGenerator` (seeded noise + biomes), `ChunkManager` (streaming, cities, collision, edits), `WorldEditStore`, `BlockInventory`, `VoxelRaycaster` |
+| `world` | `Box`, `Chunk`, `BlockMaterial`, `BlockPos`, `TerrainGenerator` (seeded noise + biomes), `WorldLayout` (seeded city/road/hamlet planning), `ChunkManager` (streaming, cities, collision, edits), `WorldEditStore`, `BlockInventory`, `VoxelRaycaster` |
 | `entity` | `Player` (movement/gravity/jump/collision), `Villager`/`Fish` AI, `Npc` (civilian/police states), `Vehicle` (car/helicopter/plane), `MouseLookController`, `CollisionWorld`/`SurfaceProvider` |
 | `render` | `ChunkMeshBuilder`/`ChunkMeshData` (hidden-face meshing), `ChunkRenderer` (per-chunk VBOs), `ViewFrustum` (culling), `EntityRenderer`, `HudRenderer`/`HudState` |
 | `physics` | `StructuralSystem` (support/load/collapse) and `FallingBlockEntity` (bounded gravity + impact damage) |
@@ -109,8 +121,10 @@ active game is `GpuBlockShot`.
 mvn -o test
 ```
 
-68 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, chunk
-load/unload and bounded memory, negative chunk coordinates, city plaza flattening, player physics,
+81 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, seeded
+city/road/hamlet layout (reproducibility, asymmetry, road corridors between cities, landmark
+guarantees, block-vs-query parity), chunk load/unload and bounded memory, negative chunk
+coordinates, city plaza flattening, launch-option parsing including `--seed`, player physics,
 villager/NPC behaviour, hidden-face meshing, frustum culling, the VBO renderer (via a fake backend),
 structural collapse and falling debris, weapons, the crime system, world edits/inventory, mouse
 look, mouse-capture/focus handling, and the multiplayer message codec and loopback relay.

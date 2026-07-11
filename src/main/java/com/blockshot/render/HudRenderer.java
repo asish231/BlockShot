@@ -191,6 +191,10 @@ public final class HudRenderer implements AutoCloseable {
 
     private float[] minimapColor(ChunkManager chunks, int wx, int wz, int h) {
         if (h <= chunks.waterLevel()) return new float[]{0.16f, 0.34f, 0.58f};
+        if (chunks.isRoadSurface(wx, wz)) return new float[]{0.16f, 0.17f, 0.19f};
+        if (chunks.isCityChunk(Math.floorDiv(wx, Chunk.SIZE), Math.floorDiv(wz, Chunk.SIZE))) {
+            return new float[]{0.62f, 0.63f, 0.66f};
+        }
         TerrainGenerator.Biome biome = chunks.terrain().biomeAt(wx, wz);
         float shade = 0.6f + Math.min(0.4f, (h - chunks.waterLevel()) * 0.03f);
         switch (biome) {

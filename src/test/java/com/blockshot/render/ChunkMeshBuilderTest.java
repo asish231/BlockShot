@@ -40,8 +40,8 @@ class ChunkMeshBuilderTest {
     void givenCameraFacingNorth_whenChunksTested_thenBehindChunkIsCulled() {
         ViewFrustum frustum = new ViewFrustum(0, 0, 0, 70, 16.0 / 9.0, 160);
 
-        assertTrue(frustum.intersectsChunk(0, 3));
-        assertFalse(frustum.intersectsChunk(0, -3));
+        assertTrue(frustum.intersectsChunk(0, -3));
+        assertFalse(frustum.intersectsChunk(0, 3));
         assertFalse(frustum.intersectsChunk(20, 20));
     }
 }

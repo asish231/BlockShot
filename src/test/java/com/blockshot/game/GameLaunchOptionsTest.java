@@ -46,4 +46,28 @@ class GameLaunchOptionsTest {
         assertThrows(IllegalArgumentException.class, () -> GameLaunchOptions.parse(
                 new String[] {"--unknown"}));
     }
+
+    @Test
+    void givenNoSeedArgument_whenParsed_thenDefaultSeedIsUsed() {
+        GameLaunchOptions options = GameLaunchOptions.parse(new String[0]);
+
+        assertEquals(GameLaunchOptions.DEFAULT_SEED, options.worldSeed());
+    }
+
+    @Test
+    void givenSeedArgument_whenParsed_thenWorldSeedIsRetained() {
+        GameLaunchOptions options = GameLaunchOptions.parse(new String[] {"--seed=-987654321"});
+
+        assertEquals(-987654321L, options.worldSeed());
+    }
+
+    @Test
+    void givenInvalidSeedArguments_whenParsed_thenTheyAreRejected() {
+        assertThrows(IllegalArgumentException.class, () -> GameLaunchOptions.parse(
+                new String[] {"--seed=not-a-number"}));
+        assertThrows(IllegalArgumentException.class, () -> GameLaunchOptions.parse(
+                new String[] {"--seed="}));
+        assertThrows(IllegalArgumentException.class, () -> GameLaunchOptions.parse(
+                new String[] {"--seed=1", "--seed=2"}));
+    }
 }
