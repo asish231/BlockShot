@@ -139,10 +139,11 @@ active game is `GpuBlockShot`.
 mvn -o test
 ```
 
-81 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, seeded
+99 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, seeded
 city/road/hamlet layout (reproducibility, asymmetry, road corridors between cities, landmark
 guarantees, block-vs-query parity), chunk load/unload and bounded memory, negative chunk
-coordinates, city plaza flattening, launch-option parsing including `--seed`, player physics,
+coordinates, city plaza flattening, OSM projection/JSON parsing/sector caching/spatial indexing,
+hollow real-world structures and asynchronous chunk refresh, launch-option parsing including `--seed`, player physics,
 villager/NPC behaviour, hidden-face meshing, frustum culling, the VBO renderer (via a fake backend),
 structural collapse and falling debris, weapons, the crime system, world edits/inventory, mouse
 look, mouse-capture/focus handling, and the multiplayer message codec and loopback relay.
