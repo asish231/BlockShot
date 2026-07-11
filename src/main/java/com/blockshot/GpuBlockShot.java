@@ -103,7 +103,7 @@ public final class GpuBlockShot {
     private Vehicle ridden;
 
     private final boolean[] keys = new boolean[400];
-    private final InputCaptureState capture = new InputCaptureState(true);
+    private final InputCaptureState capture = new InputCaptureState(false);
     private boolean firing;
 
     private boolean fullscreen;
@@ -134,6 +134,7 @@ public final class GpuBlockShot {
     }
 
     public static void main(String[] args) {
+        System.setProperty("java.awt.headless", "true");
         GameLaunchOptions options;
         try {
             options = GameLaunchOptions.parse(args);
@@ -158,7 +159,6 @@ public final class GpuBlockShot {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         window = glfwCreateWindow(1100, 700, "BlockShot 3D — Open World", 0, 0);
         if (window == 0) throw new IllegalStateException("Window creation failed");
         glfwMakeContextCurrent(window);
@@ -170,7 +170,6 @@ public final class GpuBlockShot {
         chunkRenderer = new ChunkRenderer();
         setupInput();
         setupGl();
-        revealWindow();
         startNetworking();
         spawnWorld();
 
@@ -254,28 +253,6 @@ public final class GpuBlockShot {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
-    /**
-     * Bring the freshly created window to the front and grab the mouse. On macOS a
-     * game launched from a terminal or IDE often opens <em>behind</em> the launcher
-     * and never receives keyboard/mouse focus, which is exactly what makes the world
-     * render yet feel completely frozen. Centering, showing, focusing and requesting
-     * attention force it to become the active window so input flows immediately.
-     */
-    void revealWindow() {
-        centerWindow();
-        glfwShowWindow(window);
-        glfwFocusWindow(window);
-        glfwRequestWindowAttention(window);
-        capture.onFocusChanged(true);
-        applyCursorMode();
-        look.reset();
-        // Present one sky frame right away so the window is visibly alive while the
-        // first chunks stream in, instead of looking like it hung on startup.
-        glClearColor(0.47f, 0.72f, 0.92f, 1);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glfwSwapBuffers(window);
-        glfwPollEvents();
-    }
 
     void centerWindow() {
         long monitor = glfwGetPrimaryMonitor();
