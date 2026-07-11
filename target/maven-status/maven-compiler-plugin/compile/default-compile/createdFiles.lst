@@ -34,6 +34,7 @@ com/blockshot/BlockShot$World$Box.class
 com/blockshot/render/EntityRenderer$1.class
 com/blockshot/world/ChunkManager$ChunkLoad.class
 com/blockshot/render/ChunkMeshBuilder$Block.class
+com/blockshot/input/InputCaptureState.class
 com/blockshot/net/MultiplayerServer$ClientSession.class
 com/blockshot/entity/Player.class
 com/blockshot/world/TerrainGenerator.class

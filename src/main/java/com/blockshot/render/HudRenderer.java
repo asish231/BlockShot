@@ -220,13 +220,26 @@ public final class HudRenderer implements AutoCloseable {
     }
 
     private void drawCrosshair(int W, int H) {
+        int cx = W / 2;
+        int cy = H / 2;
+        glColor3f(0, 0, 0);
+        glLineWidth(5f);
+        drawCrosshairLines(cx, cy, 13, 4);
         glColor3f(1, 1, 1);
         glLineWidth(2f);
+        drawCrosshairLines(cx, cy, 12, 5);
+        glPointSize(5f);
+        glBegin(GL_POINTS);
+        glVertex2i(cx, cy);
+        glEnd();
+    }
+
+    private void drawCrosshairLines(int cx, int cy, int outer, int inner) {
         glBegin(GL_LINES);
-        glVertex2i(W / 2 - 12, H / 2); glVertex2i(W / 2 - 5, H / 2);
-        glVertex2i(W / 2 + 5, H / 2); glVertex2i(W / 2 + 12, H / 2);
-        glVertex2i(W / 2, H / 2 - 12); glVertex2i(W / 2, H / 2 - 5);
-        glVertex2i(W / 2, H / 2 + 5); glVertex2i(W / 2, H / 2 + 12);
+        glVertex2i(cx - outer, cy); glVertex2i(cx - inner, cy);
+        glVertex2i(cx + inner, cy); glVertex2i(cx + outer, cy);
+        glVertex2i(cx, cy - outer); glVertex2i(cx, cy - inner);
+        glVertex2i(cx, cy + inner); glVertex2i(cx, cy + outer);
         glEnd();
     }
 

@@ -14,6 +14,17 @@ mvn -o compile exec:exec
 
 The launcher passes the macOS-required `-XstartOnFirstThread` JVM argument automatically.
 
+### If the view or player won't move
+
+The window now **brings itself to the front and grabs the mouse on launch**, so on-foot movement
+(`WASD`) and mouse-look work immediately — there is intentionally **no visible cursor** while playing
+(you slide the mouse/trackpad to turn). If the window ever loses focus (for example you Cmd-Tab away),
+the real cursor is released so other apps stay usable and the HUD shows **CLICK WINDOW TO CAPTURE
+MOUSE** — click once inside the window to grab it again. Pressing **F11** for borderless fullscreen
+also reliably re-grabs focus, so it doubles as an "unstick" button. Always launch with
+`mvn -o compile exec:exec` (not a bare `java -jar`), because on macOS the `-XstartOnFirstThread`
+argument it adds is required or the window freezes with no input at all.
+
 ### Multiplayer (optional, LAN)
 
 Launch arguments are parsed by `GameLaunchOptions`:
@@ -36,7 +47,7 @@ If the network is unavailable the game falls back to offline play instead of cra
 | `WASD` | move / strafe | throttle + steer |
 | `Space` | jump | ascend (helicopter) / climb (plane) |
 | `Shift` | sprint | descend |
-| Mouse | look around (cursor captured) | look around |
+| Mouse | look around (mouse grabbed; **click** to re-grab after losing focus) | look around |
 | `F` | enter the nearest vehicle | exit the vehicle |
 | `B` | toggle **BUILD** / **COMBAT** mode | — |
 | Left click | BUILD: break a block · COMBAT: fire (hold to keep firing) | — |
@@ -44,6 +55,7 @@ If the network is unavailable the game falls back to offline play instead of cra
 | Mouse wheel / `1`–`9` | select the block material | — |
 | `Q` | COMBAT: switch weapon (pistol / rifle / shotgun) | — |
 | `R` | COMBAT: reload | — |
+| `F11` | toggle **borderless fullscreen** (also re-grabs focus) | toggle fullscreen |
 | `Esc` | exit | exit |
 
 ## What you'll find
@@ -97,8 +109,8 @@ active game is `GpuBlockShot`.
 mvn -o test
 ```
 
-63 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, chunk
+68 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, chunk
 load/unload and bounded memory, negative chunk coordinates, city plaza flattening, player physics,
 villager/NPC behaviour, hidden-face meshing, frustum culling, the VBO renderer (via a fake backend),
 structural collapse and falling debris, weapons, the crime system, world edits/inventory, mouse
-look, and the multiplayer message codec and loopback relay.
+look, mouse-capture/focus handling, and the multiplayer message codec and loopback relay.

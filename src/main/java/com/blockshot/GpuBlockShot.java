@@ -18,6 +18,7 @@ import com.blockshot.game.CrimeSystem;
 import com.blockshot.game.CrimeType;
 import com.blockshot.game.GameLaunchOptions;
 import com.blockshot.game.WorldInteractionSystem;
+import com.blockshot.input.InputCaptureState;
 import com.blockshot.net.MultiplayerClient;
 import com.blockshot.net.MultiplayerServer;
 import com.blockshot.net.NetworkMessage;
@@ -40,6 +41,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.opengl.GL;
 
 /**
@@ -101,8 +103,14 @@ public final class GpuBlockShot {
     private Vehicle ridden;
 
     private final boolean[] keys = new boolean[400];
-    private boolean mouseCaptured = true;
+    private final InputCaptureState capture = new InputCaptureState(true);
     private boolean firing;
+
+    private boolean fullscreen;
+    private final int[] savedX = new int[1];
+    private final int[] savedY = new int[1];
+    private final int[] savedW = new int[1];
+    private final int[] savedH = new int[1];
 
     private int selectedBlock;
     private boolean combatMode;    // false = BUILD, true = COMBAT (on foot)
@@ -150,6 +158,7 @@ public final class GpuBlockShot {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         window = glfwCreateWindow(1100, 700, "BlockShot 3D — Open World", 0, 0);
         if (window == 0) throw new IllegalStateException("Window creation failed");
         glfwMakeContextCurrent(window);
@@ -161,18 +170,19 @@ public final class GpuBlockShot {
         chunkRenderer = new ChunkRenderer();
         setupInput();
         setupGl();
+        revealWindow();
         startNetworking();
         spawnWorld();
 
         double last = glfwGetTime();
         while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
             double now = glfwGetTime();
             double dt = Math.min(0.05, now - last);
             last = now;
             update(dt);
             draw();
             glfwSwapBuffers(window);
-            glfwPollEvents();
         }
         shutdown();
     }
@@ -187,6 +197,8 @@ public final class GpuBlockShot {
             if (action != GLFW_PRESS) return;
             if (key == GLFW_KEY_ESCAPE) {
                 glfwSetWindowShouldClose(window, true);
+            } else if (key == GLFW_KEY_F11) {
+                toggleFullscreen();
             } else if (key >= GLFW_KEY_1 && key <= GLFW_KEY_9) {
                 int idx = key - GLFW_KEY_1;
                 if (idx < BUILDABLE.length) selectedBlock = idx;
@@ -202,9 +214,14 @@ public final class GpuBlockShot {
             }
         });
         glfwSetCursorPosCallback(window, (w, mx, my) -> {
-            if (mouseCaptured) look.onPointer(mx, my);
+            if (capture.captured()) look.onPointer(mx, my);
         });
         glfwSetMouseButtonCallback(window, (w, btn, act, mods) -> {
+            if (act == GLFW_PRESS && capture.onPressShouldRecapture()) {
+                applyCursorMode();
+                look.reset();
+                return;
+            }
             if (btn == GLFW_MOUSE_BUTTON_LEFT) {
                 firing = act != GLFW_RELEASE;
                 if (act == GLFW_PRESS && !combatMode && ridden == null) buildAction(false);
@@ -217,12 +234,12 @@ public final class GpuBlockShot {
             int n = BUILDABLE.length;
             selectedBlock = ((selectedBlock + (yoff > 0 ? -1 : 1)) % n + n) % n;
         });
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        if (glfwRawMouseMotionSupported()) glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         glfwSetWindowFocusCallback(window, (w, focused) -> {
-            mouseCaptured = focused;
-            if (!focused) look.reset();
+            capture.onFocusChanged(focused);
+            applyCursorMode();
+            look.reset();
         });
+        applyCursorMode();
     }
 
     void setupGl() {
@@ -235,6 +252,77 @@ public final class GpuBlockShot {
         glEnable(GL_NORMALIZE);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+
+    /**
+     * Bring the freshly created window to the front and grab the mouse. On macOS a
+     * game launched from a terminal or IDE often opens <em>behind</em> the launcher
+     * and never receives keyboard/mouse focus, which is exactly what makes the world
+     * render yet feel completely frozen. Centering, showing, focusing and requesting
+     * attention force it to become the active window so input flows immediately.
+     */
+    void revealWindow() {
+        centerWindow();
+        glfwShowWindow(window);
+        glfwFocusWindow(window);
+        glfwRequestWindowAttention(window);
+        capture.onFocusChanged(true);
+        applyCursorMode();
+        look.reset();
+        // Present one sky frame right away so the window is visibly alive while the
+        // first chunks stream in, instead of looking like it hung on startup.
+        glClearColor(0.47f, 0.72f, 0.92f, 1);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    void centerWindow() {
+        long monitor = glfwGetPrimaryMonitor();
+        GLFWVidMode mode = monitor == 0 ? null : glfwGetVideoMode(monitor);
+        if (mode == null) return;
+        int[] w = new int[1];
+        int[] h = new int[1];
+        glfwGetWindowSize(window, w, h);
+        glfwSetWindowPos(window, Math.max(0, (mode.width() - w[0]) / 2),
+                Math.max(0, (mode.height() - h[0]) / 2));
+    }
+
+    /** Grab or free the OS cursor to match the current capture state. */
+    void applyCursorMode() {
+        boolean grab = capture.captured();
+        glfwSetInputMode(window, GLFW_CURSOR, grab ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        if (grab && glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        }
+    }
+
+    /**
+     * Toggle borderless fullscreen on the primary monitor. Besides being nicer to
+     * play, a fullscreen window reliably becomes the active window on macOS, so this
+     * doubles as a dependable way to recover focus if the game ever feels stuck.
+     */
+    void toggleFullscreen() {
+        long monitor = glfwGetPrimaryMonitor();
+        GLFWVidMode mode = monitor == 0 ? null : glfwGetVideoMode(monitor);
+        if (mode == null) return;
+        fullscreen = !fullscreen;
+        if (fullscreen) {
+            glfwGetWindowPos(window, savedX, savedY);
+            glfwGetWindowSize(window, savedW, savedH);
+            glfwSetWindowMonitor(window, monitor, 0, 0,
+                    mode.width(), mode.height(), mode.refreshRate());
+            setMessage("FULLSCREEN (F11 TO EXIT)");
+        } else {
+            glfwSetWindowMonitor(window, 0, savedX[0], savedY[0],
+                    Math.max(640, savedW[0]), Math.max(480, savedH[0]), 0);
+            setMessage("WINDOWED");
+        }
+        glfwSwapInterval(1);
+        glfwFocusWindow(window);
+        capture.onFocusChanged(true);
+        applyCursorMode();
+        look.reset();
     }
 
     void startNetworking() {
@@ -674,7 +762,9 @@ public final class GpuBlockShot {
         int remotePlayers = client != null ? client.remotePlayers().size() : 0;
         String network = options.hosting() ? "HOST" : options.joining() ? "JOIN" : "OFFLINE";
         int draws = chunkRenderer.opaqueDrawCount() + chunkRenderer.translucentDrawCount();
-        String shown = messageTimer > 0 ? message : "";
+        String shown = capture.captured()
+                ? (messageTimer > 0 ? message : "")
+                : "CLICK WINDOW TO CAPTURE MOUSE";
         return new HudState(health, crime.wantedLevel(), mode, w.type().name(), w.ammo(),
                 w.reserve(), inventory.count(BUILDABLE[selectedBlock]), vehicleName, occupants,
                 capacity, remotePlayers, network, chunkRenderer.gpuBytes(), draws, shown);
