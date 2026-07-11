@@ -757,7 +757,7 @@ public final class GpuBlockShot {
         return new double[] {
             Math.sin(yr) * Math.cos(pr),
             -Math.sin(pr),
-            Math.cos(yr) * Math.cos(pr),
+            -Math.cos(yr) * Math.cos(pr),
         };
     }
 

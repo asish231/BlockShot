@@ -37,11 +37,11 @@ public final class Player {
                        boolean sprint, CollisionWorld world) {
         double speed = sprint ? SPRINT_SPEED : WALK_SPEED;
         double r = Math.toRadians(yaw);
-        double fx = Math.sin(r), fz = Math.cos(r);
-        double sx = Math.cos(r), sz = -Math.sin(r);
+        double fx = Math.sin(r), fz = -Math.cos(r);
+        double sx = Math.cos(r), sz = Math.sin(r);
 
-        double moveX = (fx * forward + sx * strafe);
-        double moveZ = (fz * forward + sz * strafe);
+        double moveX = (fx * forward - sx * strafe);
+        double moveZ = (fz * forward - sz * strafe);
         double len = Math.hypot(moveX, moveZ);
         if (len > 1e-6) {
             moveX /= len;
