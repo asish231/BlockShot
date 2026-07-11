@@ -6,7 +6,11 @@ import java.util.*;
 import java.util.List;
 import javax.swing.*;
 
-/** Dependency-free first-person, block-world shooter renderer. */
+/**
+ * LEGACY reference implementation: a dependency-free Java/Swing software renderer.
+ * It is no longer the active game — see {@link GpuBlockShot} for the current GPU
+ * (LWJGL/OpenGL) open-world edition. Kept only as a historical/reference demo.
+ */
 public final class BlockShot {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {

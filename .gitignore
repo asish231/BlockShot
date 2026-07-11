@@ -1,0 +1,14 @@
+# Build output
+target/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+
+# Local helper files
+.background_output_*.txt
