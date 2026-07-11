@@ -27,7 +27,8 @@ The launcher passes the macOS-required `-XstartOnFirstThread` JVM argument autom
 In OSM mode, 512 m sectors load in the background from the Overpass API and are cached under
 `src/main/resources/osm_cache/sector_X_Z.json`. Cached sectors are reused on later runs, and a
 temporary network failure leaves the already generated ground playable rather than blocking the
-render loop. The endpoint and cache location can be overridden with `-Dworld.osm.endpoint=...` and
+render loop. Overpass requests are serialized and transient rate limits are retried with bounded
+backoff. The endpoint and cache location can be overridden with `-Dworld.osm.endpoint=...` and
 `-Dworld.osm.cache=...`.
 
 ### If the view or player won't move
@@ -139,7 +140,7 @@ active game is `GpuBlockShot`.
 mvn -o test
 ```
 
-99 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, seeded
+101 JUnit 5 tests run without needing a graphics context and cover deterministic terrain, seeded
 city/road/hamlet layout (reproducibility, asymmetry, road corridors between cities, landmark
 guarantees, block-vs-query parity), chunk load/unload and bounded memory, negative chunk
 coordinates, city plaza flattening, OSM projection/JSON parsing/sector caching/spatial indexing,

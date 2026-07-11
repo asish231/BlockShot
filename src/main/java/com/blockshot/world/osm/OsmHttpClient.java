@@ -18,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 
 /** Asynchronously fetches 512-metre Overpass sectors and caches their JSON on disk. */
 public final class OsmHttpClient {
@@ -29,7 +30,11 @@ public final class OsmHttpClient {
     private final Path cacheDirectory;
     private final URI endpoint;
     private final Transport transport;
+    private final int maximumAttempts;
+    private final Duration retryDelay;
     private final ConcurrentMap<Sector, CompletableFuture<String>> requests = new ConcurrentHashMap<>();
+    private final Object requestQueueLock = new Object();
+    private CompletableFuture<Void> requestTail = CompletableFuture.completedFuture(null);
 
     public OsmHttpClient() {
         this(Path.of(System.getProperty("world.osm.cache", DEFAULT_CACHE_DIRECTORY.toString())),
@@ -38,9 +43,18 @@ public final class OsmHttpClient {
     }
 
     public OsmHttpClient(Path cacheDirectory, URI endpoint, Transport transport) {
+        this(cacheDirectory, endpoint, transport, 3, Duration.ofSeconds(1));
+    }
+
+    OsmHttpClient(Path cacheDirectory, URI endpoint, Transport transport,
+                  int maximumAttempts, Duration retryDelay) {
         this.cacheDirectory = Objects.requireNonNull(cacheDirectory, "cacheDirectory");
         this.endpoint = Objects.requireNonNull(endpoint, "endpoint");
         this.transport = Objects.requireNonNull(transport, "transport");
+        this.maximumAttempts = maximumAttempts;
+        this.retryDelay = Objects.requireNonNull(retryDelay, "retryDelay");
+        if (maximumAttempts <= 0) throw new IllegalArgumentException("maximumAttempts must be positive");
+        if (retryDelay.isNegative()) throw new IllegalArgumentException("retryDelay must not be negative");
         String scheme = endpoint.getScheme();
         if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
             throw new IllegalArgumentException("Overpass endpoint must use HTTP or HTTPS");
@@ -95,7 +109,7 @@ public final class OsmHttpClient {
         OsmCoordinate.GeoBounds bounds = projection.boundsForVoxelSquare(
                 minimumX, minimumZ, SECTOR_SIZE_METERS);
         String formBody = "data=" + URLEncoder.encode(overpassQuery(bounds), StandardCharsets.UTF_8);
-        return transport.post(endpoint, formBody).thenApply(response -> {
+        return enqueueRequest(formBody).thenApply(response -> {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new CompletionException(new IOException(
                         "Overpass returned HTTP " + response.statusCode()));
@@ -103,6 +117,42 @@ public final class OsmHttpClient {
             writeCached(cacheFile, response.body());
             return response.body();
         });
+    }
+
+    /** Overpass discourages parallel requests from one client, so sectors share one request queue. */
+    private CompletableFuture<HttpResult> enqueueRequest(String formBody) {
+        synchronized (requestQueueLock) {
+            CompletableFuture<HttpResult> queued = requestTail
+                    .handle((ignored, failure) -> null)
+                    .thenCompose(ignored -> postWithRetry(formBody, 1));
+            requestTail = queued.handle((response, failure) -> null);
+            return queued;
+        }
+    }
+
+    private CompletableFuture<HttpResult> postWithRetry(String formBody, int attempt) {
+        CompletableFuture<HttpResult> posted;
+        try {
+            posted = transport.post(endpoint, formBody);
+        } catch (RuntimeException exception) {
+            posted = CompletableFuture.failedFuture(exception);
+        }
+        return posted.handle((response, failure) -> {
+            boolean transientFailure = failure != null
+                    || response != null && isRetryableStatus(response.statusCode());
+            if (transientFailure && attempt < maximumAttempts) {
+                long delayMillis = retryDelay.toMillis() * attempt;
+                return CompletableFuture.runAsync(() -> { },
+                                CompletableFuture.delayedExecutor(delayMillis, TimeUnit.MILLISECONDS))
+                        .thenCompose(ignored -> postWithRetry(formBody, attempt + 1));
+            }
+            if (failure != null) return CompletableFuture.<HttpResult>failedFuture(failure);
+            return CompletableFuture.completedFuture(response);
+        }).thenCompose(future -> future);
+    }
+
+    private static boolean isRetryableStatus(int statusCode) {
+        return statusCode == 429 || statusCode == 502 || statusCode == 503 || statusCode == 504;
     }
 
     private static String overpassQuery(OsmCoordinate.GeoBounds bounds) {

@@ -10,8 +10,11 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -64,12 +67,63 @@ class OsmHttpClientTest {
     @Test
     void givenOverpassFailure_whenFetched_thenFutureFailsAndNothingIsCached() {
         OsmHttpClient client = client((uri, body) -> CompletableFuture.completedFuture(
-                new OsmHttpClient.HttpResult(429, "rate limited")));
+                new OsmHttpClient.HttpResult(400, "bad request")));
 
         CompletableFuture<String> result = client.fetchSector(-1, 4, new OsmCoordinate(0.0, 0.0));
 
         assertThrows(CompletionException.class, result::join);
         assertFalse(Files.exists(cacheDirectory.resolve("sector_-1_4.json")));
+    }
+
+    @Test
+    void givenTransientRateLimit_whenFetched_thenRequestIsRetriedAndCached() {
+        AtomicInteger requests = new AtomicInteger();
+        OsmHttpClient client = new OsmHttpClient(cacheDirectory,
+                URI.create("https://example.test/api/interpreter"), (uri, body) -> {
+                    int request = requests.incrementAndGet();
+                    return CompletableFuture.completedFuture(request == 1
+                            ? new OsmHttpClient.HttpResult(429, "rate limited")
+                            : new OsmHttpClient.HttpResult(200, "{\"elements\":[]}"));
+                }, 3, Duration.ZERO);
+
+        String result = client.fetchSector(0, 0, new OsmCoordinate(0.0, 0.0)).join();
+
+        assertEquals("{\"elements\":[]}", result);
+        assertEquals(2, requests.get());
+        assertTrue(Files.isRegularFile(cacheDirectory.resolve("sector_0_0.json")));
+    }
+
+    @Test
+    void givenTwoUncachedSectors_whenFetched_thenNetworkRequestsNeverOverlap() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger active = new AtomicInteger();
+        AtomicInteger maximumActive = new AtomicInteger();
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CompletableFuture<OsmHttpClient.HttpResult> firstResponse = new CompletableFuture<>();
+        CompletableFuture<OsmHttpClient.HttpResult> secondResponse = new CompletableFuture<>();
+        OsmHttpClient client = client((uri, body) -> {
+            int call = calls.incrementAndGet();
+            maximumActive.accumulateAndGet(active.incrementAndGet(), Math::max);
+            if (call == 1) firstStarted.countDown();
+            else secondStarted.countDown();
+            CompletableFuture<OsmHttpClient.HttpResult> response = call == 1
+                    ? firstResponse : secondResponse;
+            return response.whenComplete((value, failure) -> active.decrementAndGet());
+        });
+
+        CompletableFuture<String> first = client.fetchSector(0, 0, new OsmCoordinate(0.0, 0.0));
+        CompletableFuture<String> second = client.fetchSector(1, 0, new OsmCoordinate(0.0, 0.0));
+        assertTrue(firstStarted.await(2, TimeUnit.SECONDS));
+        assertEquals(1, calls.get());
+
+        firstResponse.complete(new OsmHttpClient.HttpResult(200, "{\"elements\":[]}"));
+        assertTrue(secondStarted.await(2, TimeUnit.SECONDS));
+        secondResponse.complete(new OsmHttpClient.HttpResult(200, "{\"elements\":[]}"));
+        CompletableFuture.allOf(first, second).join();
+
+        assertEquals(2, calls.get());
+        assertEquals(1, maximumActive.get());
     }
 
     private OsmHttpClient client(OsmHttpClient.Transport transport) {
