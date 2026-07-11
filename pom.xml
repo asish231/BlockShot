@@ -1,7 +1,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.blockshot</groupId><artifactId>blockshot-gpu</artifactId><version>1.0.0</version>
-  <properties><maven.compiler.release>21</maven.compiler.release><lwjgl.version>3.3.6</lwjgl.version><world.mode>procedural</world.mode><world.osm.latitude>40.7580</world.osm.latitude><world.osm.longitude>-73.9855</world.osm.longitude><world.osm.cache>src/main/resources/osm_cache</world.osm.cache><world.osm.endpoint>https://overpass-api.de/api/interpreter</world.osm.endpoint></properties>
+  <properties><maven.compiler.release>21</maven.compiler.release><lwjgl.version>3.3.6</lwjgl.version><world.mode>procedural</world.mode><world.osm.latitude>9.9312</world.osm.latitude><world.osm.longitude>76.2673</world.osm.longitude><world.osm.cache>src/main/resources/osm_cache</world.osm.cache><world.osm.endpoint>https://overpass-api.de/api/interpreter</world.osm.endpoint></properties>
   <dependencies>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl</artifactId><version>${lwjgl.version}</version></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId><version>${lwjgl.version}</version></dependency>
