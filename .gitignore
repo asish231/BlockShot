@@ -6,9 +6,13 @@ out/
 .idea/
 *.iml
 .vscode/
+.junie/
 
 # OS
 .DS_Store
 
 # Local helper files
 .background_output_*.txt
+
+# Runtime OpenStreetMap sector cache
+src/main/resources/osm_cache/

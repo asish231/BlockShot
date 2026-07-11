@@ -5,6 +5,7 @@ import com.blockshot.entity.Fish;
 import com.blockshot.entity.Npc;
 import com.blockshot.entity.NpcRole;
 import com.blockshot.entity.Villager;
+import com.blockshot.world.osm.OsmWorldGenerator;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -44,13 +45,24 @@ public final class ChunkManager implements CollisionWorld {
 
     private final TerrainGenerator terrain;
     private final WorldLayout layout;
+    private final boolean useOsm;
+    private final OsmWorldGenerator osmGenerator;
     private final int renderDistance;
     private final Map<Long, Chunk> loaded = new HashMap<>();
     private final WorldEditStore edits = new WorldEditStore();
+    private long osmRevision;
 
     public ChunkManager(TerrainGenerator terrain, int renderDistance) {
+        this(terrain, renderDistance, defaultOsmGenerator());
+    }
+
+    public ChunkManager(TerrainGenerator terrain, int renderDistance,
+                        OsmWorldGenerator osmGenerator) {
         this.terrain = Objects.requireNonNull(terrain, "terrain");
         this.layout = new WorldLayout(terrain.seed());
+        this.useOsm = osmGenerator != null;
+        this.osmGenerator = osmGenerator;
+        this.osmRevision = useOsm ? osmGenerator.revision() : 0L;
         this.renderDistance = renderDistance;
     }
 
@@ -79,6 +91,10 @@ public final class ChunkManager implements CollisionWorld {
         return layout;
     }
 
+    public boolean usesOsm() {
+        return useOsm;
+    }
+
     // ------------------------------------------------------------------
     // Streaming
     // ------------------------------------------------------------------
@@ -96,6 +112,8 @@ public final class ChunkManager implements CollisionWorld {
         if (maxLoads < 0) throw new IllegalArgumentException("maxLoads must not be negative");
         int pcx = Math.floorDiv((int) Math.floor(px), Chunk.SIZE);
         int pcz = Math.floorDiv((int) Math.floor(pz), Chunk.SIZE);
+
+        refreshLoadedOsmChunks();
 
         loaded.entrySet().removeIf(entry -> {
             Chunk chunk = entry.getValue();
@@ -130,16 +148,18 @@ public final class ChunkManager implements CollisionWorld {
     // ------------------------------------------------------------------
 
     private boolean isUrbanChunk(int cx, int cz) {
-        return layout.isUrbanChunk(cx, cz);
+        return !useOsm && layout.isUrbanChunk(cx, cz);
     }
 
     /** True for chunks that belong to a city, exposed for HUD map rendering. */
     public boolean isCityChunk(int cx, int cz) {
+        if (useOsm) return osmGenerator.hasBuildingsInChunk(cx, cz);
         return isUrbanChunk(cx, cz);
     }
 
     /** True when a column's surface is road asphalt, urban street or highway. */
     public boolean isRoadSurface(int wx, int wz) {
+        if (useOsm) return osmGenerator.isRoadAt(wx, wz);
         int cx = Math.floorDiv(wx, Chunk.SIZE);
         int cz = Math.floorDiv(wz, Chunk.SIZE);
         if (isUrbanChunk(cx, cz)) return isRoadCell(wx, wz);
@@ -159,6 +179,7 @@ public final class ChunkManager implements CollisionWorld {
 
     /** Ground height of a world column, honouring city, hamlet and road grading. */
     public int columnHeight(int gx, int gz) {
+        if (useOsm) return osmGenerator.columnHeight(gx, gz);
         int cx = Math.floorDiv(gx, Chunk.SIZE);
         int cz = Math.floorDiv(gz, Chunk.SIZE);
         if (isUrbanChunk(cx, cz)) return cityPlazaHeight(cx, cz);
@@ -189,6 +210,7 @@ public final class ChunkManager implements CollisionWorld {
     /** Deterministic unedited material at a world cell, loaded or not. */
     public BlockMaterial generatedBlockAt(BlockPos pos) {
         Objects.requireNonNull(pos, "pos");
+        if (useOsm) return osmGenerator.getBlockAt(pos);
         if (pos.y() < 0) return null;
 
         int cx = pos.chunkX();
@@ -321,6 +343,7 @@ public final class ChunkManager implements CollisionWorld {
     // ------------------------------------------------------------------
 
     private Chunk generate(int cx, int cz) {
+        if (useOsm) return osmGenerator.generateChunk(cx, cz);
         Chunk chunk = new Chunk(cx, cz);
         Random rng = new Random(mix(cx, cz, terrain.seed()));
         boolean urban = isUrbanChunk(cx, cz);
@@ -1207,6 +1230,7 @@ public final class ChunkManager implements CollisionWorld {
     }
 
     private int generatedColumnUpperBound(int gx, int gz) {
+        if (useOsm) return osmGenerator.upperBoundAt(gx, gz);
         int height = columnHeight(gx, gz);
         int upperBound = height - 1;
         int cx = Math.floorDiv(gx, Chunk.SIZE);
@@ -1222,6 +1246,19 @@ public final class ChunkManager implements CollisionWorld {
             upperBound = TerrainGenerator.WATER_LEVEL - 1;
         }
         return upperBound;
+    }
+
+    private void refreshLoadedOsmChunks() {
+        if (!useOsm) return;
+        long latestRevision = osmGenerator.revision();
+        if (latestRevision == osmRevision) return;
+        loaded.replaceAll((key, chunk) -> osmGenerator.generateChunk(chunk.cx, chunk.cz));
+        osmRevision = latestRevision;
+    }
+
+    private static OsmWorldGenerator defaultOsmGenerator() {
+        return System.getProperty("world.mode", "procedural").equalsIgnoreCase("osm")
+                ? new OsmWorldGenerator() : null;
     }
 
     private static BlockMaterial nonAir(BlockMaterial material) {

@@ -3,12 +3,26 @@ package com.blockshot.world;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.blockshot.world.osm.OsmCoordinate;
+import com.blockshot.world.osm.OsmElement;
+import com.blockshot.world.osm.OsmHttpClient;
+import com.blockshot.world.osm.OsmWorldGenerator;
+import java.net.URI;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ChunkManagerTest {
+
+    @TempDir
+    Path cacheDirectory;
 
     private ChunkManager manager(int renderDistance) {
         return new ChunkManager(new TerrainGenerator(42L), renderDistance);
@@ -137,6 +151,72 @@ class ChunkManagerTest {
             if (entry.getValue() == BlockMaterial.BRICK) sawCottage = true;
         }
         assertTrue(sawCottage, "farmstead cottage walls should exist");
+    }
+
+    @Test
+    void givenInjectedOsmGenerator_whenChunkLoaded_thenOsmWorldReplacesProceduralGeneration() {
+        OsmWorldGenerator generator = new OsmWorldGenerator(new OsmCoordinate(0.0, 0.0), List.of(
+                new OsmElement.OsmRoad(List.of(
+                        new BlockPos(0, 0, 8), new BlockPos(15, 0, 8)), 4.0f)));
+        ChunkManager cm = new ChunkManager(new TerrainGenerator(42L), 0, generator);
+
+        cm.update(0.5, 0.5);
+
+        int surface = OsmWorldGenerator.GROUND_HEIGHT - 1;
+        assertTrue(cm.usesOsm());
+        assertEquals(OsmWorldGenerator.GROUND_HEIGHT, cm.columnHeight(0, 0));
+        assertEquals(BlockMaterial.ASPHALT, cm.generatedBlockAt(new BlockPos(7, surface, 8)));
+        assertEquals(BlockMaterial.ASPHALT, cm.chunkAt(0, 0).blocks.get(new BlockPos(7, surface, 8)));
+    }
+
+    @Test
+    void givenOsmSystemProperty_whenManagerCreated_thenOsmModeIsEnabled() {
+        String previous = System.getProperty("world.mode");
+        System.setProperty("world.mode", "OSM");
+        try {
+            assertTrue(new ChunkManager(new TerrainGenerator(42L), 0).usesOsm());
+        } finally {
+            if (previous == null) System.clearProperty("world.mode");
+            else System.setProperty("world.mode", previous);
+        }
+    }
+
+    @Test
+    void givenVisibleOsmChunk_whenSectorCompletes_thenChunkIsRegenerated() {
+        OsmCoordinate projection = new OsmCoordinate(0.0, 0.0);
+        CompletableFuture<OsmHttpClient.HttpResult> response = new CompletableFuture<>();
+        OsmHttpClient client = new OsmHttpClient(cacheDirectory,
+                URI.create("https://example.test/api/interpreter"), (uri, body) -> response);
+        OsmWorldGenerator generator = new OsmWorldGenerator(projection, client);
+        ChunkManager cm = new ChunkManager(new TerrainGenerator(42L), 0, generator);
+
+        cm.update(0.5, 0.5);
+        Chunk before = cm.chunkAt(0, 0);
+        BlockPos roadCell = new BlockPos(7, OsmWorldGenerator.GROUND_HEIGHT - 1, 8);
+        assertEquals(BlockMaterial.DIRT, before.blocks.get(roadCell));
+
+        response.complete(new OsmHttpClient.HttpResult(200,
+                roadJson(projection)));
+        generator.loadChunk(0, 0).join();
+        cm.updateIncremental(0.5, 0.5, 0);
+
+        Chunk after = cm.chunkAt(0, 0);
+        assertNotSame(before, after);
+        assertEquals(BlockMaterial.ASPHALT, after.blocks.get(roadCell));
+    }
+
+    private static String roadJson(OsmCoordinate projection) {
+        return "{\"elements\":[" + nodeJson(projection, 1, 0, 8) + ","
+                + nodeJson(projection, 2, 15, 8) + ","
+                + "{\"type\":\"way\",\"id\":10,\"nodes\":[1,2],"
+                + "\"tags\":{\"highway\":\"residential\"}}]}";
+    }
+
+    private static String nodeJson(OsmCoordinate projection, long id, int x, int z) {
+        OsmCoordinate.GeoCoordinate coordinate = projection.toGeo(x, z);
+        return String.format(Locale.ROOT,
+                "{\"type\":\"node\",\"id\":%d,\"lat\":%.12f,\"lon\":%.12f}",
+                id, coordinate.latitude(), coordinate.longitude());
     }
 
     private static int[] findCountrysideRoadCell(WorldLayout layout, int midX, int midZ) {

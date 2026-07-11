@@ -1,7 +1,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.blockshot</groupId><artifactId>blockshot-gpu</artifactId><version>1.0.0</version>
-  <properties><maven.compiler.release>21</maven.compiler.release><lwjgl.version>3.3.6</lwjgl.version></properties>
+  <properties><maven.compiler.release>21</maven.compiler.release><lwjgl.version>3.3.6</lwjgl.version><world.mode>procedural</world.mode><world.osm.latitude>64.1466</world.osm.latitude><world.osm.longitude>-21.9426</world.osm.longitude><world.osm.cache>src/main/resources/osm_cache</world.osm.cache><world.osm.endpoint>https://overpass-api.de/api/interpreter</world.osm.endpoint></properties>
   <dependencies>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl</artifactId><version>${lwjgl.version}</version></dependency>
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-glfw</artifactId><version>${lwjgl.version}</version></dependency>
@@ -11,5 +11,5 @@
     <dependency><groupId>org.lwjgl</groupId><artifactId>lwjgl-opengl</artifactId><version>${lwjgl.version}</version><classifier>natives-macos-arm64</classifier><scope>runtime</scope></dependency>
     <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.2</version><scope>test</scope></dependency>
   </dependencies>
-  <build><plugins><plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version><configuration><executable>java</executable><arguments><argument>-XstartOnFirstThread</argument><argument>-classpath</argument><classpath/><argument>com.blockshot.GpuBlockShot</argument></arguments></configuration></plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version></plugin></plugins></build>
+  <build><plugins><plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version><configuration><executable>java</executable><arguments><argument>-XstartOnFirstThread</argument><argument>-Dworld.mode=${world.mode}</argument><argument>-Dworld.osm.latitude=${world.osm.latitude}</argument><argument>-Dworld.osm.longitude=${world.osm.longitude}</argument><argument>-Dworld.osm.cache=${world.osm.cache}</argument><argument>-Dworld.osm.endpoint=${world.osm.endpoint}</argument><argument>-classpath</argument><classpath/><argument>com.blockshot.GpuBlockShot</argument></arguments></configuration></plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version></plugin></plugins></build>
 </project>

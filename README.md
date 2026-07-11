@@ -5,6 +5,8 @@ OpenGL through LWJGL 3. Roam an effectively infinite, procedurally generated wor
 forests, oceans and wildlife — with living crowds, police, drivable vehicles, guns, destructible
 buildings and optional LAN multiplayer.
 
+![BlockShot 3D Gameplay](image.png)
+
 ## Run
 
 ```bash
@@ -13,9 +15,20 @@ mvn -o compile exec:exec
 
 # Explore a different world — any number is a valid seed (default 1337)
 mvn -o compile exec:exec -Dexec.args="--seed=20260711"
+
+# Stream real streets and buildings around Reykjavik from OpenStreetMap
+mvn -o -Dworld.mode=osm compile exec:exec
+
+# Choose another GPS point to place at voxel X=0, Z=0 (example: central London)
+mvn -o -Dworld.mode=osm -Dworld.osm.latitude=51.5074 -Dworld.osm.longitude=-0.1278 compile exec:exec
 ```
 
 The launcher passes the macOS-required `-XstartOnFirstThread` JVM argument automatically.
+In OSM mode, 512 m sectors load in the background from the Overpass API and are cached under
+`src/main/resources/osm_cache/sector_X_Z.json`. Cached sectors are reused on later runs, and a
+temporary network failure leaves the already generated ground playable rather than blocking the
+render loop. The endpoint and cache location can be overridden with `-Dworld.osm.endpoint=...` and
+`-Dworld.osm.cache=...`.
 
 ### If the view or player won't move
 
@@ -77,6 +90,10 @@ When playing together, pass the **same `--seed`** on every machine so everyone r
   elevations and causeway across water, and sprinkles the countryside with **farmstead hamlets**
   (cottage, fenced yard, crops). The same seed always rebuilds the exact same world; a different
   seed gives a genuinely different map.
+- **Optional real-world generation** — launch with `-Dworld.mode=osm` to project OSM roads,
+  buildings, parks and water around a chosen latitude/longitude into metre-scaled voxels. Buildings
+  are hollow and enterable, with material-aware walls, windows every floor, concrete floors/roofs
+  and climbable ladders; roads retain widths inferred from their OSM highway type.
 - **Biomes & nature** — plains, forests, rocky hills and oceans; trees, flowers, translucent
   **water** with **swimming fish**.
 - **Cities & people** — every city is districted (residential, mall/hospital, courtyard,
@@ -104,7 +121,8 @@ modules together.
 
 | Package | Responsibility |
 |---|---|
-| `world` | `Box`, `Chunk`, `BlockMaterial`, `BlockPos`, `TerrainGenerator` (seeded noise + biomes), `WorldLayout` (seeded city/road/hamlet planning), `ChunkManager` (streaming, cities, collision, edits), `WorldEditStore`, `BlockInventory`, `VoxelRaycaster` |
+| `world` | `Box`, `Chunk`, `BlockMaterial`, `BlockPos`, `TerrainGenerator` (seeded noise + biomes), `WorldLayout` (seeded city/road/hamlet planning), `ChunkManager` (streaming, procedural/OSM selection, collision, edits), `WorldEditStore`, `BlockInventory`, `VoxelRaycaster` |
+| `world.osm` | Web Mercator projection, asynchronous Overpass client + sector cache, dependency-free JSON parsing, chunk spatial indexes and OSM-to-voxel generation |
 | `entity` | `Player` (movement/gravity/jump/collision), `Villager`/`Fish` AI, `Npc` (civilian/police states), `Vehicle` (car/helicopter/plane), `MouseLookController`, `CollisionWorld`/`SurfaceProvider` |
 | `render` | `ChunkMeshBuilder`/`ChunkMeshData` (hidden-face meshing), `ChunkRenderer` (per-chunk VBOs), `ViewFrustum` (culling), `EntityRenderer`, `HudRenderer`/`HudState` |
 | `physics` | `StructuralSystem` (support/load/collapse) and `FallingBlockEntity` (bounded gravity + impact damage) |

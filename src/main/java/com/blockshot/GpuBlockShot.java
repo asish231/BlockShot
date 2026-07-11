@@ -334,11 +334,17 @@ public final class GpuBlockShot {
     }
 
     void spawnWorld() {
-        // Spawn on the plaza row just south of the home city's landmark chunk;
-        // that row is kept clear of structures by every district type.
-        WorldLayout.City home = chunks.layout().nearestCity(0, 0);
-        spawnX = home.chunkX() * Chunk.SIZE + 7.5;
-        spawnZ = (home.chunkZ() + 1) * Chunk.SIZE + 0.5;
+        if (chunks.usesOsm()) {
+            // The selected GPS reference is defined to be voxel-space origin.
+            spawnX = 0.5;
+            spawnZ = 0.5;
+        } else {
+            // Spawn on the plaza row just south of the home city's landmark chunk;
+            // that row is kept clear of structures by every district type.
+            WorldLayout.City home = chunks.layout().nearestCity(0, 0);
+            spawnX = home.chunkX() * Chunk.SIZE + 7.5;
+            spawnZ = (home.chunkZ() + 1) * Chunk.SIZE + 0.5;
+        }
         chunks.updateIncremental(spawnX, spawnZ, SPAWN_LOAD);
         player = new Player(spawnX, chunks.surfaceY(spawnX, spawnZ), spawnZ);
         player.pitch = 5;
@@ -346,6 +352,13 @@ public final class GpuBlockShot {
     }
 
     void spawnVehicles() {
+        if (chunks.usesOsm()) {
+            addVehicle(VehicleType.CAR, spawnX + 3.0, spawnZ);
+            addVehicle(VehicleType.CAR, spawnX + 6.0, spawnZ);
+            addVehicle(VehicleType.HELICOPTER, spawnX, spawnZ + 6.0);
+            addVehicle(VehicleType.PLANE, spawnX, spawnZ + 10.0);
+            return;
+        }
         WorldLayout.City home = chunks.layout().nearestCity(0, 0);
         double rowZ = (home.chunkZ() + 1) * Chunk.SIZE + 0.5;
         double baseX = home.chunkX() * Chunk.SIZE;
