@@ -1,5 +1,8 @@
 package com.blockshot.world.osm;
 
+import com.blockshot.entity.Npc;
+import com.blockshot.entity.NpcRole;
+import com.blockshot.entity.Villager;
 import com.blockshot.world.BlockMaterial;
 import com.blockshot.world.BlockPos;
 import com.blockshot.world.Chunk;
@@ -7,6 +10,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -125,6 +130,41 @@ public final class OsmWorldGenerator {
                 }
             }
         }
+
+        // Spawn citizens/NPCs along roads dynamically in OSM mode
+        long chunkKey = Chunk.key(chunkX, chunkZ);
+        List<OsmElement.OsmRoad> roads = chunkRoads.getOrDefault(chunkKey, List.of());
+        if (!roads.isEmpty()) {
+            Random rng = new Random(chunkKey ^ 0x5DEECE66DL);
+            // Spawn a few villagers
+            for (int i = 0; i < Math.min(5, roads.size() * 2); i++) {
+                OsmElement.OsmRoad road = roads.get(rng.nextInt(roads.size()));
+                if (!road.points().isEmpty()) {
+                    BlockPos pt = road.points().get(rng.nextInt(road.points().size()));
+                    double rx = pt.x() + 0.5 + (rng.nextDouble() - 0.5) * 2;
+                    double rz = pt.z() + 0.5 + (rng.nextDouble() - 0.5) * 2;
+                    chunk.villagers.add(new Villager(rx, rz,
+                            0.35f + rng.nextFloat() * 0.6f,
+                            0.35f + rng.nextFloat() * 0.6f,
+                            0.35f + rng.nextFloat() * 0.6f,
+                            rng.nextLong()));
+                }
+            }
+            // Spawn some patrolling civilian and police NPCs
+            for (int i = 0; i < Math.min(3, roads.size()); i++) {
+                OsmElement.OsmRoad road = roads.get(rng.nextInt(roads.size()));
+                if (!road.points().isEmpty()) {
+                    BlockPos pt = road.points().get(rng.nextInt(road.points().size()));
+                    double rx = pt.x() + 0.5;
+                    double rz = pt.z() + 0.5;
+                    NpcRole role = (i == 0) ? NpcRole.POLICE : NpcRole.CIVILIAN;
+                    Npc npc = new Npc(UUID.randomUUID(), role, rx, rz, rng.nextLong());
+                    npc.y = GROUND_HEIGHT;
+                    chunk.npcs.add(npc);
+                }
+            }
+        }
+
         return chunk;
     }
 
